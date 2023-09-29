@@ -21,6 +21,11 @@ type User struct {
 	Name 		string `mapstructure:"name"`
 	Email 		string `mapstructure:"email"`
 	Mobile 		string `mapstructure:"mobile"`
+	Extra       map[string]interface{} `mapstructure:"extra"`
+	Comment 	string `mapstructure:"comment"`
+	Event 		string `mapstructure:"event"`
+	Created 	string `mapstructure:"created"`
+
 	Status   	string `mapstructure:"status"`
 	ID          string  `mapstructure:"id"`
 }

@@ -1,7 +1,7 @@
 package admin
 import (
 
-	"fmt"
+	"log"
 
 	"github.com/ruvido/go-pocketbase-admin/pkg"
 	"github.com/spf13/cobra"
@@ -17,7 +17,7 @@ var backupCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		collectionName := args[0]
-		fmt.Println(collectionName)
+		log.Println(collectionName)
 		admin.BackupCollection(collectionName, backupSearchFilter) 
 	},
 }
