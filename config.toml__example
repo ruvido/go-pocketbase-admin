@@ -1,0 +1,11 @@
+[pocketbase]
+address 	= "https://xxx.it"
+admin   	= "xxx@gmail.com"
+password 	= "xxx"
+
+[smtp]
+user     	= "xxx"
+password	= "xxx"
+address		= "smtp-broadcasts.xxx.com"
+port 		= "587"
+
