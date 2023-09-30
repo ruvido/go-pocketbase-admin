@@ -3,8 +3,11 @@ package admin
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/paginator"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type Person struct {
@@ -16,14 +19,38 @@ type Person struct {
 	status string
 }
 
-type model struct {
+type modelx struct {
 	choices  []User           // items on the to-do list
 	cursor   int                // which to-do list item our cursor is pointing at
 	selected map[int]struct{}   // which to-do items are selected
+	paginator paginator.Model
 }
 
-func initialModel( people []User ) model {
-	return model{
+var needUpdate = false
+
+func newModel( people []User ) modelx {
+	// var items []string
+	// for i := 1; i < 101; i++ {
+	// 	text := fmt.Sprintf("Item %d", i)
+	// 	items = append(items, text)
+	// }
+
+	p := paginator.New()
+	p.Type = paginator.Dots
+	p.PerPage = 10
+	p.ActiveDot = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "235", Dark: "252"}).Render("•")
+	p.InactiveDot = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "250", Dark: "238"}).Render("•")
+	p.SetTotalPages(len(people))
+
+	return modelx{
+		paginator: p,
+		// items:     items,
+		choices: people,
+	}
+}
+
+func initialModel( people []User ) modelx {
+	return modelx{
 		// Our to-do list is a grocery list
 		// choices:  []string{"Buy carrots", "Buy celery", "Buy kohlrabi"},
 		// choices : []Person{
@@ -41,13 +68,16 @@ func initialModel( people []User ) model {
 	}
 }
 
-func (m model) Init() tea.Cmd {
+func (m modelx) Init() tea.Cmd {
 	// Just return `nil`, which means "no I/O right now, please."
 	fmt.Println("Import pocketbase data")
 	return nil
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m modelx) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+
+	var cmd tea.Cmd
+
 	switch msg := msg.(type) {
 
 		// Is it a key press?
@@ -58,24 +88,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// The "up" and "k" keys move the cursor up
 		case "a":
+			needUpdate = true
 			m.choices[m.cursor].Status = "accepted"
 			m.cursor++
 
 		case "x":
+			needUpdate = true
 			m.choices[m.cursor].Status = "rejected"
 			m.cursor++
 
 		case "w":
+			needUpdate = true
 			m.choices[m.cursor].Status = "waiting"
 			m.cursor++
 
 			// update
 		case "u":
 			UpdateCollection(m.choices)
+			needUpdate = false
 
 			// update & quit
 		case "q":
-			UpdateCollection(m.choices)
+			if needUpdate {
+				UpdateCollection(m.choices)
+			}
 			return m, tea.Quit
 
 			// Abort and exit the program.
@@ -84,14 +120,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// The "up" and "k" keys move the cursor up
 		case "up", "k":
-			if m.cursor > 0 {
+			// if m.cursor > 0 {
+			// 	m.cursor--
+			// }
+			if m.paginator.Page == 0 {
+				if m.cursor > 0 {
+					m.cursor--
+				} 
+			} else {
 				m.cursor--
+				if m.cursor < 0 {
+					m.paginator.PrevPage()
+					m.cursor = m.paginator.PerPage-1
+				}
 			}
 
 			// The "down" and "j" keys move the cursor down
 		case "down", "j":
-			if m.cursor < len(m.choices)-1 {
+			// if m.cursor < len(m.choices)-1 {
+			if m.cursor + m.paginator.PerPage*m.paginator.Page <  len(m.choices)-1  {
 				m.cursor++
+			}
+			if m.cursor  >= m.paginator.PerPage {
+				m.paginator.NextPage()
+				m.cursor = 0
 			}
 
 			// The "enter" key and the spacebar (a literal space) toggle
@@ -108,10 +160,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Return the updated model to the Bubble Tea runtime for processing.
 	// Note that we're not returning a command.
-	return m, nil
+	// return m, nil
+
+	// with paginator
+	m.paginator, cmd = m.paginator.Update(msg)
+	return m, cmd
 }
 
-func (m model) View() string {
+func (m modelx) CAZZView() string {
 	// The header
 	s := "What should we buy at the market?\n\n"
 
@@ -138,6 +194,9 @@ func (m model) View() string {
 		if choice.Status == "waiting" {
 			accepted = "+"
 		}
+		if choice.Status == "rejected" {
+			accepted = "E"
+		}
 
 		// Render the row
 		s += fmt.Sprintf("%s %2s %-15s %-25s\n", cursor, accepted, choice.Name, choice.Email)
@@ -157,9 +216,45 @@ func (m model) View() string {
 	return s
 }
 
+func (m modelx) View() string {
+	var b strings.Builder
+	b.WriteString("\n  Paginator Example\n\n")
+	start, end := m.paginator.GetSliceBounds(len(m.choices))
+	for i, item := range m.choices[start:end] {
+
+		// Is the cursor pointing at this choice?
+		cursor := " " // no cursor
+		if m.cursor == i {
+			cursor = ">" // cursor!
+		}
+		// Is this person accepted?
+		accepted:= " " // not accepted
+		if item.Status == "accepted" {
+			accepted = "*"
+		}
+		if item.Status == "waiting" {
+			accepted = "+"
+		}
+		if item.Status == "rejected" {
+			accepted = "E"
+		}
+
+		// Render the row
+		s := fmt.Sprintf("%s %2s %-25s %-25s\n", cursor, accepted, item.Name, item.Email)
+		b.WriteString(s)
+		// b.WriteString("  • " + item.Name + "\n\n")
+	}
+	b.WriteString("  " + m.paginator.View())
+	b.WriteString("\n\n  h/l ←/→ page • q: quit\n")
+	// c := fmt.Sprintf("%d > %d -- %d %d --- %d", m.cursor, (m.paginator.Page+1)*m.paginator.PerPage,m.paginator.Page,m.paginator.PerPage, (m.cursor+1) + (m.paginator.Page+1)*m.paginator.PerPage)
+	// b.WriteString(c)
+	return b.String()
+}
+
 // func main() {
 func BubbleList(people []User) {
-	p := tea.NewProgram(initialModel(people))
+	// p := tea.NewProgram(initialModel(people))
+	p := tea.NewProgram(newModel(people))
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Alas, there's been an error: %v", err)
 		os.Exit(1)
