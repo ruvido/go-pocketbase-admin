@@ -24,6 +24,7 @@ type modelx struct {
 	cursor   int                // which to-do list item our cursor is pointing at
 	selected map[int]struct{}   // which to-do items are selected
 	paginator paginator.Model
+	pagCursor int             // cursor relative to pagination
 }
 
 var needUpdate = false
@@ -70,7 +71,6 @@ func initialModel( people []User ) modelx {
 
 func (m modelx) Init() tea.Cmd {
 	// Just return `nil`, which means "no I/O right now, please."
-	fmt.Println("Import pocketbase data")
 	return nil
 }
 
@@ -127,23 +127,27 @@ func (m modelx) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.cursor > 0 {
 					m.cursor--
 				} 
+				m.pagCursor=m.cursor
 			} else {
 				m.cursor--
-				if m.cursor < 0 {
+				m.pagCursor = m.cursor - m.paginator.Page*m.paginator.PerPage
+				if m.pagCursor < 0 {
 					m.paginator.PrevPage()
-					m.cursor = m.paginator.PerPage-1
+					m.pagCursor = m.paginator.PerPage-1
 				}
 			}
 
 			// The "down" and "j" keys move the cursor down
 		case "down", "j":
 			// if m.cursor < len(m.choices)-1 {
-			if m.cursor + m.paginator.PerPage*m.paginator.Page <  len(m.choices)-1  {
+			// if m.cursor + m.paginator.PerPage*m.paginator.Page <  len(m.choices)-1  {
+			if m.cursor  <  len(m.choices)-1  {
 				m.cursor++
 			}
-			if m.cursor  >= m.paginator.PerPage {
+			m.pagCursor = m.cursor - m.paginator.Page*m.paginator.PerPage
+			if m.pagCursor  >= m.paginator.PerPage {
 				m.paginator.NextPage()
-				m.cursor = 0
+				m.pagCursor = 0
 			}
 
 			// The "enter" key and the spacebar (a literal space) toggle
@@ -167,64 +171,15 @@ func (m modelx) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m modelx) CAZZView() string {
-	// The header
-	s := "What should we buy at the market?\n\n"
-
-	// Iterate over our choices
-	for i, choice := range m.choices {
-
-		// Is the cursor pointing at this choice?
-		cursor := " " // no cursor
-		if m.cursor == i {
-			cursor = ">" // cursor!
-		}
-
-		// Is this choice selected?
-		// checked := " " // not selected
-		// if _, ok := m.selected[i]; ok {
-		// 	checked = "x" // selected!
-		// }
-
-		// Is this person accepted?
-		accepted:= " " // not accepted
-		if choice.Status == "accepted" {
-			accepted = "*"
-		}
-		if choice.Status == "waiting" {
-			accepted = "+"
-		}
-		if choice.Status == "rejected" {
-			accepted = "E"
-		}
-
-		// Render the row
-		s += fmt.Sprintf("%s %2s %-15s %-25s\n", cursor, accepted, choice.Name, choice.Email)
-	}
-
-	// The footer
-	s += "\n     a to accept."
-	s += "\n     x to reject."
-	s += "\n     w to waiting list."
-	s += "\n     ------------------"
-	s += "\n     u to update pocketbase."
-	s += "\n     q to update and quit."
-	s += "\n     ------------------"
-	s += "\n     ctrl+c to abort.\n"
-
-	// Send the UI for rendering
-	return s
-}
-
 func (m modelx) View() string {
 	var b strings.Builder
-	b.WriteString("\n  Paginator Example\n\n")
+	b.WriteString("\n  Pocketbase admin\n\n")
 	start, end := m.paginator.GetSliceBounds(len(m.choices))
 	for i, item := range m.choices[start:end] {
 
 		// Is the cursor pointing at this choice?
 		cursor := " " // no cursor
-		if m.cursor == i {
+		if m.pagCursor == i {
 			cursor = ">" // cursor!
 		}
 		// Is this person accepted?
@@ -240,13 +195,13 @@ func (m modelx) View() string {
 		}
 
 		// Render the row
-		s := fmt.Sprintf("%s %2s %-25s %-25s\n", cursor, accepted, item.Name, item.Email)
+		s := fmt.Sprintf("%s %2s %-25s %-35s %-25s\n", cursor, accepted, item.Name, item.Email, item.Mobile)
 		b.WriteString(s)
 		// b.WriteString("  • " + item.Name + "\n\n")
 	}
 	b.WriteString("  " + m.paginator.View())
-	b.WriteString("\n\n  h/l ←/→ page • q: quit\n")
-	// c := fmt.Sprintf("%d > %d -- %d %d --- %d", m.cursor, (m.paginator.Page+1)*m.paginator.PerPage,m.paginator.Page,m.paginator.PerPage, (m.cursor+1) + (m.paginator.Page+1)*m.paginator.PerPage)
+	b.WriteString("\n\n  a: accept, w: waiting, x: reject • u: update • q: quit \n")
+	// c := fmt.Sprintf("%d %d", m.cursor, m.pagCursor )
 	// b.WriteString(c)
 	return b.String()
 }
@@ -261,3 +216,47 @@ func BubbleList(people []User) {
 	}
 }
 
+// func (m modelx) CAZZView() string {
+// 	// The header
+// 	s := "What should we buy at the market?\n\n"
+//
+// 	// Iterate over our choices
+// 	for i, choice := range m.choices {
+//
+// 		// Is the cursor pointing at this choice?
+// 		cursor := " " // no cursor
+// 		// if m.cursor == i {
+// 		if m.cursor == i {
+// 			cursor = ">" // cursor!
+// 		}
+//
+// 		// Is this person accepted?
+// 		accepted:= " " // not accepted
+// 		if choice.Status == "accepted" {
+// 			accepted = "*"
+// 		}
+// 		if choice.Status == "waiting" {
+// 			accepted = "+"
+// 		}
+// 		if choice.Status == "rejected" {
+// 			accepted = "E"
+// 		}
+//
+// 		// Render the row
+// 		s += fmt.Sprintf("%s %2s %-15s %-25s\n", cursor, accepted, choice.Name, choice.Email)
+// 	}
+//
+// 	// The footer
+// 	s += "\n     a to accept."
+// 	s += "\n     x to reject."
+// 	s += "\n     w to waiting list."
+// 	s += "\n     ------------------"
+// 	s += "\n     u to update pocketbase."
+// 	s += "\n     q to update and quit."
+// 	s += "\n     ------------------"
+// 	s += "\n     ctrl+c to abort.\n"
+//
+// 	// Send the UI for rendering
+// 	return s
+// }
+//
