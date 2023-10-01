@@ -8,26 +8,25 @@ import (
 	// "github.com/spf13/viper"
 )
 
-var searchFilter = ""
+var bubbleSearchFilter = ""
+
+func init() {
+    listCmd.Flags().StringVarP(&bubbleSearchFilter, "search", "s", "", "Search filter (e.g. name ~ 'chiara')")
+    rootCmd.AddCommand(listCmd)
+}
 
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Aliases: []string{"l", "lis", "lst"},
+	// Aliases: []string{"l", "lis", "lst"},
 	Short:  "List Records from a Pocketbase Collection",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		collectionName := args[0]
 		fmt.Println(collectionName)
-		admin.ListRecordsFromCollection(collectionName, searchFilter)
-
-		// template     := viper.GetString("general.template")
-		// lett  := letter.MarkdownToHtml(markdownFile, template)
-		// users := letter.FetchAddresses( list )
-		// letter.Send ( lett, users ) // Send Newsletter
+		// admin.CollectionRecords(collectionName, searchFilter) 
+		people := admin.CollectionRecords(collectionName, bubbleSearchFilter) 
+		admin.BubbleList(people)
 	},
 }
 
-func init() {
-    listCmd.Flags().StringVarP(&searchFilter, "search", "s", "", "Search filter (e.g. name ~ 'chiara')")
-    rootCmd.AddCommand(listCmd)
-}
+

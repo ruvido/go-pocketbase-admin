@@ -2,243 +2,280 @@ package admin
 
 import (
 	"fmt"
-	"log"
 	"os"
-	// "os/exec"
-	// "net/http"
-	// "io/ioutil"
-	"encoding/json"
+	"strings"
 
-    "github.com/spf13/viper"
-	"github.com/r--w/pocketbase"
-	"github.com/mitchellh/mapstructure"
-	"github.com/olekukonko/tablewriter"
-
-	// tea "github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/paginator"
+	"github.com/charmbracelet/lipgloss"
 )
 
-type User struct {
-	Name 		string `mapstructure:"name"`
-	Email 		string `mapstructure:"email"`
-	Mobile 		string `mapstructure:"mobile"`
-	Extra       map[string]interface{} `mapstructure:"extra"`
-	Comment 	string `mapstructure:"comment"`
-	Event 		string `mapstructure:"event"`
-	Created 	string `mapstructure:"created"`
-
-	Status   	string `mapstructure:"status"`
-	ID          string  `mapstructure:"id"`
+type Person struct {
+    name   string
+	email  string
+	mobile string
+	state  string
+    age    string
+	status string
 }
 
-type PocketbaseConfig struct {
-	Admin string
-	Passw string
-	Addre string
-	Colle string
-	Filte string
-}
-var	pbConfig = PocketbaseConfig{}
-
-func CollectionRecords( collectionName string, searchFilter string ) []User {
-
-	// pocketbase
-	// pbConfig := PocketbaseConfig{}
-	pbConfig.Admin = viper.GetString("pocketbase.admin")
-	pbConfig.Passw = viper.GetString("pocketbase.password")
-	pbConfig.Addre = viper.GetString("pocketbase.address")
-	pbConfig.Colle = collectionName
-	pbConfig.Filte = searchFilter
-
-	users := []User{}
-	users = pocketbaseList ( pbConfig )
-
-	return users
+type modelx struct {
+	choices  []User           // items on the to-do list
+	cursor   int                // which to-do list item our cursor is pointing at
+	selected map[int]struct{}   // which to-do items are selected
+	paginator paginator.Model
+	pagCursor int             // cursor relative to pagination
 }
 
-func UpdateCollection( people []User ){
-	client := pocketbase.NewClient(pbConfig.Addre, 
-	pocketbase.WithAdminEmailPassword( pbConfig.Admin, pbConfig.Passw ))
-	// r, err := client.Create("caz", map[string]any{
-	// 	"name": "stocaz",
-	// })
-	for _, p := range people {
-		var err = client.Update(pbConfig.Colle, p.ID,map[string]any{
-			"status": p.Status,
-		})
-		if err != nil {
-			log.Fatal(err)
+var needUpdate = false
+
+func newModel( people []User ) modelx {
+	// var items []string
+	// for i := 1; i < 101; i++ {
+	// 	text := fmt.Sprintf("Item %d", i)
+	// 	items = append(items, text)
+	// }
+
+	p := paginator.New()
+	p.Type = paginator.Dots
+	p.PerPage = 10
+	p.ActiveDot = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "235", Dark: "252"}).Render("•")
+	p.InactiveDot = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "250", Dark: "238"}).Render("•")
+	p.SetTotalPages(len(people))
+
+	return modelx{
+		paginator: p,
+		// items:     items,
+		choices: people,
+	}
+}
+
+func initialModel( people []User ) modelx {
+	return modelx{
+		// Our to-do list is a grocery list
+		// choices:  []string{"Buy carrots", "Buy celery", "Buy kohlrabi"},
+		// choices : []Person{
+		// 	{name: "Alice Oliss",  email: "ali@ce.co",   mobile: "12343456", state: "Veneto", age: "23", status: ""},
+		// 	{name: "Bob Ujik",     email: "bo@b.co",     mobile: "98653006", state: "Lazio",  age: "18", status: ""},
+		// 	{name: "Mark Bombero", email: "mk@bombe.ro", mobile: "34273006", state: "Emilia", age: "29", status: ""},
+		// },
+		choices: people,
+
+
+		// A map which indicates which choices are selected. We're using
+		// the  map like a mathematical set. The keys refer to the indexes
+		// of the `choices` slice, above.
+		selected: make(map[int]struct{}),
+	}
+}
+
+func (m modelx) Init() tea.Cmd {
+	// Just return `nil`, which means "no I/O right now, please."
+	return nil
+}
+
+func (m modelx) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+
+		// Is it a key press?
+	case tea.KeyMsg:
+
+		// Cool, what was the actual key pressed?
+		switch msg.String() {
+
+			// The "up" and "k" keys move the cursor up
+		case "a":
+			needUpdate = true
+			m.choices[m.cursor].Status = "accepted"
+			m.cursor++
+
+		case "c":
+			needUpdate = true
+			m.choices[m.cursor].Status = "cancelled"
+			m.cursor++
+
+		case "x":
+			needUpdate = true
+			m.choices[m.cursor].Status = ""
+			m.cursor++
+
+		case "w":
+			needUpdate = true
+			m.choices[m.cursor].Status = "waiting"
+			m.cursor++
+
+			// update
+		case "u":
+			UpdateCollection(m.choices)
+			needUpdate = false
+
+			// update & quit
+		case "q":
+			if needUpdate {
+				UpdateCollection(m.choices)
+			}
+			return m, tea.Quit
+
+			// Abort and exit the program.
+		case "ctrl+c":
+			return m, tea.Quit
+
+		case "left":
+			// m.paginator.PrevPage()
+			if m.paginator.Page > 0 {
+				m.cursor = m.cursor - m.paginator.PerPage
+			}
+
+		case "right":
+			// m.paginator.NextPage()
+			m.cursor = m.cursor + m.paginator.PerPage
+			if m.cursor >= len(m.choices)-1 {
+				m.cursor = len(m.choices)-1
+			}
+
+			// The "up" and "k" keys move the cursor up
+		case "up", "k":
+			// if m.cursor > 0 {
+			// 	m.cursor--
+			// }
+			if m.paginator.Page == 0 {
+				if m.cursor > 0 {
+					m.cursor--
+				} 
+				m.pagCursor=m.cursor
+			} else {
+				m.cursor--
+				m.pagCursor = m.cursor - m.paginator.Page*m.paginator.PerPage
+				if m.pagCursor < 0 {
+					m.paginator.PrevPage()
+					m.pagCursor = m.paginator.PerPage-1
+				}
+			}
+
+			// The "down" and "j" keys move the cursor down
+		case "down", "j":
+			// if m.cursor < len(m.choices)-1 {
+			// if m.cursor + m.paginator.PerPage*m.paginator.Page <  len(m.choices)-1  {
+			if m.cursor  <  len(m.choices)-1  {
+				m.cursor++
+			}
+			m.pagCursor = m.cursor - m.paginator.Page*m.paginator.PerPage
+			if m.pagCursor  >= m.paginator.PerPage {
+				m.paginator.NextPage()
+				m.pagCursor = 0
+			}
+
+			// The "enter" key and the spacebar (a literal space) toggle
+			// the selected state for the item that the cursor is pointing at.
+		// case "enter", " ":
+		// 	_, ok := m.selected[m.cursor]
+		// 	if ok {
+		// 		delete(m.selected, m.cursor)
+		// 	} else {
+		// 		m.selected[m.cursor] = struct{}{}
+		// 	}
 		}
 	}
+
+	// Return the updated model to the Bubble Tea runtime for processing.
+	// Note that we're not returning a command.
+	// return m, nil
+
+	// with paginator
+	m.paginator, cmd = m.paginator.Update(msg)
+	return m, cmd
 }
 
-func BackupCollection( collectionName string, searchFilter string ) {
+func (m modelx) View() string {
+	var b strings.Builder
+	b.WriteString("\n  Pocketbase admin\n\n")
+	start, end := m.paginator.GetSliceBounds(len(m.choices))
+	for i, item := range m.choices[start:end] {
 
-	people := CollectionRecords( collectionName, searchFilter )
-	data, err := json.Marshal(people)
-    if err != nil {
-        fmt.Println("Error marshaling to JSON:", err)
-        return
-    }
-    fmt.Println(string(data))
+		// Is the cursor pointing at this choice?
+		cursor := " " // no cursor
+		m.pagCursor = m.cursor - m.paginator.Page*m.paginator.PerPage
+		if m.pagCursor == i {
+			cursor = ">" // cursor!
+		}
+		// Is this person accepted?
+		accepted:= " " // not accepted
+		if item.Status == "accepted" {
+			accepted = "*"
+		}
+		if item.Status == "waiting" {
+			accepted = "+"
+		}
+		if item.Status == "cancelled" {
+			accepted = "C"
+		}
 
-}
-
-func ListRecordsFromCollection( collectionName string, searchFilter string ) {
-
-	// pocketbase
-	pbConfig.Admin = viper.GetString("pocketbase.admin")
-	pbConfig.Passw = viper.GetString("pocketbase.password")
-	pbConfig.Addre = viper.GetString("pocketbase.address")
-	// pbConfig.Colle = viper.GetString("pocketbase.collection")
-	// pbConfig.Filte = viper.GetString("pocketbase.filter")
-	pbConfig.Colle = collectionName
-	// pbConfig.Filte = "event.name ~ '#4'"
-	pbConfig.Filte = searchFilter
-
-	users := []User{}
-	users = pocketbaseList ( pbConfig )
-
-	// log.Println(users)
-
-	// Create a new table writer
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetBorder(false)                                // Set Border to false
-
-	// Set the table headers
-	table.SetHeader([]string{"#", "Name", "Email", "Mobile"})
-
-	// Add the data to the table
-	for idx, person := range users{
-		// table.Append([]string{person.Name, fmt.Sprintf("%d", person.Age)})
-		table.Append([]string{fmt.Sprintf("%d", idx+1), person.Name, person.Email, person.Mobile})
+		// Render the row
+		s := fmt.Sprintf("%s %2s %-25s %-35s %-25s\n", cursor, accepted, item.Name, item.Email, item.Mobile)
+		b.WriteString(s)
+		// b.WriteString("  • " + item.Name + "\n\n")
 	}
-
-	// // Clear the terminal screen
-	// // cmd := exec.Command("reset")
-	// cmd := exec.Command("clear")
-	// cmd.Stdout = os.Stdout
-	// cmd.Run()
-
-	// Render the table
-	table.Render()
-
+	b.WriteString("  " + m.paginator.View())
+	b.WriteString("\n\n  a: accept, w: waiting, c: cancelled, x: reset • u: update • q: quit \n")
+	c := fmt.Sprintf("%d %d", m.cursor, m.pagCursor )
+	b.WriteString(c)
+	return b.String()
 }
 
-func pocketbaseList( pbConfig PocketbaseConfig ) []User {
-
-	client := pocketbase.NewClient(pbConfig.Addre, 
-	pocketbase.WithAdminEmailPassword( pbConfig.Admin, pbConfig.Passw ))
-
-	response, err := client.List(pbConfig.Colle, pocketbase.ParamsList{
-		Page: 1, Size: 10000, Sort: "-created", Filters: pbConfig.Filte,
-	})
-	if err != nil {
-		log.Fatal(err)
+// func main() {
+func BubbleList(people []User) {
+	// p := tea.NewProgram(initialModel(people))
+	p := tea.NewProgram(newModel(people))
+	if _, err := p.Run(); err != nil {
+		fmt.Printf("Alas, there's been an error: %v", err)
+		os.Exit(1)
 	}
-	log.Printf("Total of Emails: %d\n",response.TotalItems)
-
-	users := []User{}
-	err = mapstructure.Decode(response.Items, &users)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return users
 }
-////  
-////  
-////  
-////  func UserList() []User{
-////  
-////  	var table="newsletter"
-////  	var secret="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFpamdzZ3djZW9lbGtreWNxbnp0Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTY0Njc2NzQwNiwiZXhwIjoxOTYyMzQzNDA2fQ.NIQuU-LC8YbBN0MPb2QbbiwsOPNMyjAvx_VLtd4_ElQ"
-////  	var url="https://qijgsgwceoelkkycqnzt.supabase.co/rest/v1/"
-////  	var sele="verified=is.true&subscribed=is.true"
-////  
-////  	users := []User{}
-////  
-////  	// var newUser User 
-////  
-////  	// if test {
-////  	//
-////  	// 	log.Println("Sending a test")
-////  	// 	if batchTest {
-////  	// 		for ii := 1; ii <= 10; ii++ {
-////  	// 			newUser.Addr = fmt.Sprintf("ruvido+%d@gmail.com", ii)
-////  	// 			users = append(users,newUser)
-////  	// 		}
-////  	// 	} else {
-////  	// 		newUser.Addr = "ruvido@gmail.com"
-////  	// 		users = append(users,newUser)
-////  	// 	}
-////  	//
-////  	// } else {
-////  
-////  	log.Println("fetch email addresses")
-////  
-////  
-////  	params := table+"?"+sele 
-////  	path   := url + params
-////  
-////  	req, err := http.NewRequest(http.MethodGet, path, nil)
-////  	if err != nil {
-////  		log.Printf("client: could not create request: %s\n", err)
-////  		os.Exit(1)
-////  	}
-////  
-////  	bearer := "Bearer "+secret
-////  	req.Header.Add("apikey", secret)
-////  	req.Header.Add("Authorization", bearer)
-////  	res, err := http.DefaultClient.Do(req)
-////  	if err != nil {
-////  		log.Printf("client: error http request: %s\n", err)
-////  		os.Exit(1)
-////  	}
-////  
-////  	log.Printf("client: got response!\n")
-////  	log.Printf("client: status code: %d\n", res.StatusCode)
-////  
-////  	resBody, err := ioutil.ReadAll(res.Body)
-////  	if err != nil {
-////  		log.Printf("client: error response body: %s\n", err)
-////  		os.Exit(1)
-////  	}
-////  	// fmt.Printf("client: response body: %s\n", resBody)
-////  	log.Printf("client: response body: OK")
-////  
-////  	err = json.Unmarshal(resBody, &users)
-////  	if err != nil {
-////  		log.Printf("json: Unmarshal error: %s\n", err)
-////  		os.Exit(1)
-////  	}
-////  
-////  	// }
-////  
-////  	return users
-////  
-////  	// if purge {
-////  	// 	log.Printf("purge!!!")
-////  	// 	cleanList := []User{}
-////  	// 	purgeList := []User{}
-////  	// 	content, err := ioutil.ReadFile("./purge.json")
-////  	// 	if err != nil {
-////  	// 		log.Fatal("Error when opening file: ", err)
-////  	// 	}
-////  	// 	err = json.Unmarshal(content, &purgeList)
-////  	// 	if err != nil {
-////  	// 		log.Printf("json: Unmarshal error: %s\n", err)
-////  	// 		os.Exit(1)
-////  	// 	}
-////  	// 	for _,uu := range users {
-////  	// 		for _,vv := range purgeList {
-////  	// 			if uu.Addr == vv.Addr {
-////  	// 				users = append(users,uu)
-////  	// 			}
-////  	// 		}
-////  	// 	}
-////  	// 	log.Printf("wellDone!")
-////  	// 	return cleanList
-////  	// } else {
-////  	// 	return users
-////  	// }
-////  }
+
+// func (m modelx) CAZZView() string {
+// 	// The header
+// 	s := "What should we buy at the market?\n\n"
+//
+// 	// Iterate over our choices
+// 	for i, choice := range m.choices {
+//
+// 		// Is the cursor pointing at this choice?
+// 		cursor := " " // no cursor
+// 		// if m.cursor == i {
+// 		if m.cursor == i {
+// 			cursor = ">" // cursor!
+// 		}
+//
+// 		// Is this person accepted?
+// 		accepted:= " " // not accepted
+// 		if choice.Status == "accepted" {
+// 			accepted = "*"
+// 		}
+// 		if choice.Status == "waiting" {
+// 			accepted = "+"
+// 		}
+// 		if choice.Status == "rejected" {
+// 			accepted = "E"
+// 		}
+//
+// 		// Render the row
+// 		s += fmt.Sprintf("%s %2s %-15s %-25s\n", cursor, accepted, choice.Name, choice.Email)
+// 	}
+//
+// 	// The footer
+// 	s += "\n     a to accept."
+// 	s += "\n     x to reject."
+// 	s += "\n     w to waiting list."
+// 	s += "\n     ------------------"
+// 	s += "\n     u to update pocketbase."
+// 	s += "\n     q to update and quit."
+// 	s += "\n     ------------------"
+// 	s += "\n     ctrl+c to abort.\n"
+//
+// 	// Send the UI for rendering
+// 	return s
+// }
+//
