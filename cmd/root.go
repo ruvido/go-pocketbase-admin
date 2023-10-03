@@ -31,7 +31,7 @@ func init() {
 func initConfig() {
 
 	extList    := []string{"toml", "yaml", "json"}
-	configName := "config"
+	configName := "pbadmin"
 	defaultDir := os.Getenv("HOME")+"/.config/pbadmin/"
 
 	switch {
