@@ -38,6 +38,7 @@ func Send ( lett Letter, people []admin.User ) {
 			sleepInterval = 0
 		}       
 		activeUsers := people[:batchSize]
+		// activeUsers := people[len(people)-176:]
 
 		smtpSend (
 			lett, 
