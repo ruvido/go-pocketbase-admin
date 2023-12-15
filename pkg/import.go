@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"strconv"
 	"time"
+	"errors"
 	// "encoding/json"
 	//
     "github.com/spf13/viper"
@@ -27,6 +28,8 @@ import (
 
 func ImportData(collectionName string, dataFilename string ) {
 
+	var errs error
+
 	// pocketbase login
 	pbConfig.Admin = viper.GetString("pocketbase.admin")
 	pbConfig.Passw = viper.GetString("pocketbase.password")
@@ -40,33 +43,44 @@ func ImportData(collectionName string, dataFilename string ) {
 	log.Println(client)
 
 	csvFile, err := os.Open(dataFilename)
-	if err != nil {
-		log.Fatal(err)
-	}
+	errs = errors.Join(errs, err)
+
 	defer csvFile.Close()
 
 	// Read the CSV file
 	csvReader := csv.NewReader(csvFile)
 	records, err := csvReader.ReadAll()
-	if err != nil {
-		log.Fatal(err)
-	}
+	// errs = errors.Join(errs, err)
 
 	fmt.Println(records)
 
 	// const layout = "2006-01-02 15:04:05"
-	layout := "2006-01-02 15:04:05"
+	// layout := "2006-01-02 15:04:05"
+	// layout := time.RFC3339
+	layout := "2006-01-02 15:04:05.999999-07"
 	// timestr := "2022-11-25 18:02:08.052584+00"
-	timestr := "2022-11-25 18:02:08"
+	// timestr := "2022-11-25 18:02:08"
 
 	for _,p := range records[1:] {
-		cr,_ := time.Parse(layout,timestr)
-		em   := p[2]
-		aa,_ := strconv.ParseBool(p[3])
-		bb,_ := strconv.ParseBool(p[4])
-		if aa && bb {
-			fmt.Println(timestr)
-			fmt.Println(cr, em)
+		timestr := p[1]
+		cr,_         := time.Parse(layout,timestr)
+		email        := p[2]
+		subscribed,_ := strconv.ParseBool(p[3])
+		verified,_   := strconv.ParseBool(p[4])
+		if verified && subscribed {
+			// fmt.Println(timestr)
+			// fmt.Println(cr)
+			// fmt.Println(email)
+			r, err := client.Create(collectionName, map[string]any{
+				"email": email,
+				"newsletter": subscribed,
+				"supabase_created": cr,
+				"password": "1234567890",
+				"passwordConfirm": "1234567890",
+				"verified": true,
+			})
+			log.Println(r.ID, email)
+			errs = errors.Join(errs, err)
 		}
 
 		// response, err := client.Create(collectionName, map[string]any{
@@ -75,6 +89,10 @@ func ImportData(collectionName string, dataFilename string ) {
 		// if err != nil {
 		// 	log.Fatal(err)
 		// }
+
+		if errs != nil {
+			log.Fatal(errs)
+		}
 	}
 
 
